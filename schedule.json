@@ -1,0 +1,15 @@
+{
+  "default": "meteo_calendar",
+  "rules": [
+    {
+      "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+      "at": "07:00",
+      "screen": "meteo_calendar"
+    },
+    {
+      "days": ["sat"],
+      "at": "16:30",
+      "screen": "tmdb_random_list"
+    }
+  ]
+}
