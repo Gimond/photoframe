@@ -1,0 +1,5 @@
+requests
+Pillow
+cairosvg
+icalendar
+recurring-ical-events
