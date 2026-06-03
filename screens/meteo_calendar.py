@@ -240,10 +240,10 @@ def draw_header_line(draw, y, left_text, right_text, font_left, font_right, widt
 def draw_calendar_event_row(draw, y, event, font_tiny, start_x, max_x):
     accent = CALENDAR_EVENT_COLORS[event["source_index"] % len(CALENDAR_EVENT_COLORS)]
     time_text = event["start"].strftime("%H:%M")
-    pill_w = 76
-    pill_h = 24
+    pill_w = 72
+    pill_h = 20
     pill_x1 = start_x
-    pill_y1 = y + 5
+    pill_y1 = y + 4
     pill_x2 = pill_x1 + pill_w
     pill_y2 = pill_y1 + pill_h
 
@@ -257,10 +257,10 @@ def draw_calendar_event_row(draw, y, event, font_tiny, start_x, max_x):
     summary_max_w = max(10, max_x - summary_x)
     summary_text = truncate_to_width(draw, event["summary"], font_tiny, summary_max_w)
 
-    draw.rounded_rectangle((pill_x1, pill_y1, pill_x2, pill_y2), radius=8, fill=accent)
+    draw.rounded_rectangle((pill_x1, pill_y1, pill_x2, pill_y2), radius=7, fill=accent)
     draw.text((time_x, time_y), time_text, fill="black", font=font_tiny)
-    draw.text((summary_x, y + 4), summary_text, fill="black", font=font_tiny)
-    return y + 34
+    draw.text((summary_x, y + 3), summary_text, fill="black", font=font_tiny)
+    return y + 30
 
 
 def draw_plus_circle_icon(draw, center_x, center_y, radius=12):
@@ -268,11 +268,11 @@ def draw_plus_circle_icon(draw, center_x, center_y, radius=12):
     y1 = center_y - radius
     x2 = center_x + radius
     y2 = center_y + radius
-    draw.ellipse((x1, y1, x2, y2), fill="white", outline="black", width=3)
+    draw.ellipse((x1, y1, x2, y2), fill="black", outline="white", width=2)
 
     arm = max(4, radius - 6)
-    draw.line((center_x - arm, center_y, center_x + arm, center_y), fill="black", width=3)
-    draw.line((center_x, center_y - arm, center_x, center_y + arm), fill="black", width=3)
+    draw.line((center_x - arm, center_y, center_x + arm, center_y), fill="white", width=2)
+    draw.line((center_x, center_y - arm, center_x, center_y + arm), fill="white", width=2)
 
 
 def build_simulated_events():
@@ -480,45 +480,68 @@ def get_events():
 def render_image(weather, events, output_path=None):
     target_path = os.path.abspath(output_path) if output_path else frame.DEFAULT_IMAGE_PATH
 
-    img = Image.new("RGB", (800, 480), color="white")
+    img = Image.new("RGB", (800, 480), color="black")
     draw = ImageDraw.Draw(img)
     draw.fontmode = "1"  # disable text antialiasing for crisp e-ink rendering
 
     font_large = load_font(30, bold=True)
     font_small = load_font(22)
     font_title = load_font(24, bold=True)
-    font_tiny = load_font(21, bold=True)
+    font_tiny = load_font(19, bold=True)
 
     today_events, tomorrow_events = events
 
     if SIMULATE_LONG_EVENTS:
         today_events, tomorrow_events = build_simulated_events()
 
+    tomorrow_section_h = 120
+    tomorrow_top = img.height - tomorrow_section_h
+
+    card_margin = 10
+    card_radius = 12
+    today_card = (card_margin, card_margin, img.width - card_margin, tomorrow_top - 16)
+    tomorrow_card = (card_margin, tomorrow_top, img.width - card_margin, img.height - card_margin)
+    draw.rounded_rectangle(today_card, radius=card_radius, fill="white")
+    draw.rounded_rectangle(tomorrow_card, radius=card_radius, fill="white")
+
     y = draw_header_line(
         draw,
-        20,
+        22,
         capitalize_first(format_date_fr(datetime.now())),
         f"{weather['today_min']}° / {weather['today_max']}°",
         font_large,
-        font_title,
+        font_large,
         img.width,
     )
-    y += 18
+    y += 10
 
     if weather["hourly"]:
+        weather_box_left = today_card[0]
+        weather_box_right = today_card[2]
+        weather_box_top = y - 5
+        weather_box_bottom = y + 110
+        draw.rectangle(
+            (weather_box_left, weather_box_top, weather_box_right, weather_box_bottom),
+            fill="#D2D2D2",
+        )
+
         # Full-width temperature trend behind icons/text, mapped over 07:30 -> 22:30.
         trend = weather.get("today_trend") or []
         if trend:
             temps = [p["temp"] for p in trend]
             t_min = min(temps)
             t_max = max(temps)
-            y_top = y + 18
-            y_bottom = y + 98
+            y_top = weather_box_top + 20
+            y_bottom = weather_box_top + 94
+
+            trend_left = weather_box_left + 2
+            trend_right = weather_box_right - 2
+            trend_width = max(1, trend_right - trend_left)
 
             points = []
             for p in trend:
                 ratio_x = (p["hour"] - 7.5) / (22.5 - 7.5)
-                x = int(round(ratio_x * (img.width - 1)))
+                x = int(round(trend_left + (ratio_x * trend_width)))
 
                 if t_max == t_min:
                     ratio_y = 0.5
@@ -528,10 +551,10 @@ def render_image(weather, events, output_path=None):
                 points.append((x, y_curve))
 
             if len(points) >= 2:
-                draw.line(points, fill="#D2D2D2", width=8)
+                draw.line(points, fill="white", width=8)
 
-        left_margin = 20
-        right_margin = 20
+        left_margin = weather_box_left + 8
+        right_margin = img.width - weather_box_right + 8
         available_width = img.width - left_margin - right_margin
         count = len(weather["hourly"])
         step = available_width / max(count, 1)
@@ -540,7 +563,7 @@ def render_image(weather, events, output_path=None):
             center_x = left_margin + (step * i) + (step / 2)
 
             icon_path = openweather_icon_to_svg(slot["icon"])
-            paste_svg_icon(img, icon_path, center_x, y, size=56)
+            paste_svg_icon(img, icon_path, center_x, y - 5, size=56)
 
             hour_text = f"{slot['hour']:02d}h"
             temp_text = f"{format_temp(slot['temp'])}°C"
@@ -548,17 +571,15 @@ def render_image(weather, events, output_path=None):
             temp_bbox = draw.textbbox((0, 0), temp_text, font=font_tiny)
             hour_x = int(round(center_x - (hour_bbox[2] - hour_bbox[0]) / 2))
             temp_x = int(round(center_x - (temp_bbox[2] - temp_bbox[0]) / 2))
-            draw.text((hour_x, y + 64), hour_text, fill="black", font=font_tiny)
-            draw.text((temp_x, y + 90), temp_text, fill="black", font=font_tiny)
+            draw.text((hour_x, y + 50), hour_text, fill="black", font=font_tiny)
+            draw.text((temp_x, y + 77), temp_text, fill="black", font=font_tiny)
 
-        y += 124
+        y += 130
     else:
         draw.text((20, y), "Previsions horaires indisponibles.", fill="black", font=font_small)
         y += 34
 
-    # Bottom-anchored "Demain" block with a clear separator.
-    tomorrow_section_h = 120
-    tomorrow_top = img.height - tomorrow_section_h
+    # Bottom-anchored "Demain" block.
     max_y_today = tomorrow_top - 12
 
     max_today_events = 8
@@ -592,14 +613,11 @@ def render_image(weather, events, output_path=None):
             continue
         y_right = draw_calendar_event_row(draw, y_right, event, font_tiny, right_x, right_x + col_w)
 
-    if not shown_today and today_y_start + 34 <= max_y_today:
+    if not shown_today and today_y_start + 30 <= max_y_today:
         draw.text((left_x, today_y_start), "Aucun evenement.", fill="black", font=font_small)
 
     if hidden_today > 0:
         draw_plus_circle_icon(draw, img.width - 24, tomorrow_top - 22, radius=12)
-
-    # Subtle background + hard divider line for visual separation.
-    draw.rectangle((0, tomorrow_top, img.width, img.height), fill="#F1F1F1")
 
     # Left column: weather icon + title + temperatures.
     left_x = 20
