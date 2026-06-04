@@ -8,6 +8,7 @@ WORKDIR /app
 # System libs required by CairoSVG rendering pipeline.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+        cron \
         libcairo2 \
         libpango-1.0-0 \
         libgdk-pixbuf-2.0-0 \
@@ -20,6 +21,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 RUN useradd -m appuser && chown -R appuser:appuser /app
-USER appuser
 
-CMD ["python", "main.py"]
+# Cron job: execute the scheduled action every 5 minutes.
+# Use /etc/crontab format with an explicit user.
+RUN echo "*/15 * * * * appuser python /app/main.py >> /var/log/cron.log 2>&1" > /etc/crontab \
+    && chmod 0644 /etc/crontab \
+    && touch /var/log/cron.log
+
+# Useful debug command if needed when troubleshooting container lifecycle:
+# tail -f /dev/null
+
+CMD ["cron", "-f"]
