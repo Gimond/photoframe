@@ -22,11 +22,10 @@ COPY . .
 
 RUN useradd -m appuser && chown -R appuser:appuser /app
 
-# Cron job: execute the scheduled action every 5 minutes.
-# Use /etc/crontab format with an explicit user.
-RUN echo "*/15 * * * * appuser python /app/main.py >> /var/log/cron.log 2>&1" > /etc/crontab \
-    && chmod 0644 /etc/crontab \
-    && touch /var/log/cron.log
+# Cron job: execute the scheduled action every 15 minutes.
+# Send output to container stdout/stderr so Coolify can collect logs.
+RUN echo "*/15 * * * * appuser python /app/main.py >> /proc/1/fd/1 2>> /proc/1/fd/2" > /etc/crontab \
+    && chmod 0644 /etc/crontab
 
 # Useful debug command if needed when troubleshooting container lifecycle:
 # tail -f /dev/null
