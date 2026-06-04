@@ -63,8 +63,20 @@ def main():
             schedule_path = Path(schedule_file)
             if not schedule_path.is_absolute():
                 schedule_file = str(Path(frame.SCRIPT_DIR) / schedule_path)
-        screen_name, schedule_info = select_screen_from_schedule(schedule_file, now=datetime.now())
+        schedule_state_file = os.getenv("SCREEN_SCHEDULE_STATE_FILE")
+        if schedule_state_file and not Path(schedule_state_file).is_absolute():
+            schedule_state_file = str(Path(frame.SCRIPT_DIR) / schedule_state_file)
+
+        schedule_window_minutes = int(os.getenv("SCREEN_SCHEDULE_WINDOW_MINUTES", "30"))
+        screen_name, schedule_info = select_screen_from_schedule(
+            schedule_file,
+            now=datetime.now(),
+            window_minutes=schedule_window_minutes,
+            state_path=schedule_state_file,
+        )
         print(f"Planning charge: {schedule_info}")
+        if screen_name is None:
+            return
 
     module = load_screen_module(screen_name)
 

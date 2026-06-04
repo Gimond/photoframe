@@ -1,6 +1,6 @@
 import json
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from pathlib import Path
 
 
@@ -39,6 +39,29 @@ class ScheduledRule:
     at: time
     screen: str
     order: int
+
+
+def _load_state(state_path):
+    path = Path(state_path)
+    if not path.exists():
+        return {}
+
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    if not isinstance(data, dict):
+        return {}
+    return data
+
+
+def _save_state(state_path, state):
+    path = Path(state_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump(state, handle, ensure_ascii=True, indent=2)
 
 
 def _parse_time(value):
@@ -98,20 +121,48 @@ def build_rules(schedule_data):
     return rules
 
 
-def select_screen_from_schedule(schedule_path, now=None):
+def _rule_run_id(rule, scheduled_dt):
+    return f"{scheduled_dt.strftime('%Y-%m-%d')}|{rule.at.strftime('%H:%M')}|{rule.screen}|{rule.order}"
+
+
+def select_screen_from_schedule(schedule_path, now=None, window_minutes=30, state_path=None):
     current_dt = now or datetime.now()
     schedule_data = load_schedule(schedule_path)
     default_screen = str(schedule_data.get("default", DEFAULT_SCREEN)).strip() or DEFAULT_SCREEN
     rules = build_rules(schedule_data)
+    state_file = state_path or (str(Path(schedule_path).with_name(".schedule_state.json")))
+    state = _load_state(state_file)
+    already_run = set(state.get("executed_runs", []))
 
-    matching_rules = [
-        rule
-        for rule in rules
-        if current_dt.weekday() in rule.days and current_dt.time() >= rule.at
-    ]
+    due_candidates = []
+    for rule in rules:
+        if current_dt.weekday() not in rule.days:
+            continue
 
-    if matching_rules:
-        chosen = max(matching_rules, key=lambda rule: (rule.at, rule.order))
-        return chosen.screen, f"{chosen.screen} (règle {chosen.at.strftime('%H:%M')} / jour {DAY_LABELS[current_dt.weekday()]})"
+        scheduled_dt = datetime.combine(current_dt.date(), rule.at)
+        age = current_dt - scheduled_dt
+        if age < timedelta(0):
+            continue
+        if age > timedelta(minutes=window_minutes):
+            continue
 
-    return default_screen, f"par défaut={default_screen}"
+        run_id = _rule_run_id(rule, scheduled_dt)
+        if run_id in already_run:
+            continue
+
+        due_candidates.append((rule, scheduled_dt, run_id))
+
+    if due_candidates:
+        chosen_rule, scheduled_dt, run_id = max(due_candidates, key=lambda item: (item[0].at, item[0].order))
+        already_run.add(run_id)
+        state["executed_runs"] = sorted(already_run)
+        _save_state(state_file, state)
+
+        info = (
+            f"{chosen_rule.screen} (regle {chosen_rule.at.strftime('%H:%M')} / "
+            f"jour {DAY_LABELS[current_dt.weekday()]})"
+        )
+        return chosen_rule.screen, info
+
+    info = f"aucune regle due dans les {window_minutes} min; aucune action"
+    return None, info
