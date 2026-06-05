@@ -38,6 +38,7 @@ SIMULATE_LONG_EVENTS = os.getenv("SIMULATE_LONG_EVENTS", "0").strip().lower() in
     "yes",
     "on",
 }
+BEAR_DEBUG_LOGS = os.getenv("BEAR_DEBUG_LOGS", "1").strip().lower() in {"1", "true", "yes", "on"}
 
 DEFAULT_BEAR_DISPLAY_CONFIG = {
     "available_images": [
@@ -69,6 +70,11 @@ DEFAULT_BEAR_DISPLAY_CONFIG = {
         {"min_temp": -999, "image": "very_cold.png"},
     ],
 }
+
+
+def _log(message, always=False):
+    if always or BEAR_DEBUG_LOGS:
+        print(f"[meteo_calendar_bear] {message}", flush=True)
 
 
 def load_font(size, bold=False):
@@ -200,7 +206,7 @@ def load_bear_display_config():
     except FileNotFoundError:
         pass
     except (OSError, json.JSONDecodeError) as exc:
-        print(f"Config ours invalide ({exc}), utilisation des regles par defaut.")
+        _log(f"Config ours invalide ({exc}), utilisation des regles par defaut.", always=True)
 
     if not isinstance(config.get("available_images"), list):
         config["available_images"] = DEFAULT_BEAR_DISPLAY_CONFIG["available_images"]
@@ -261,7 +267,12 @@ def select_bear_illustration(weather):
         filename = config.get("default_image") or "mild_clear.png"
 
     path = os.path.join(BEAR_IMAGES_DIR, filename)
-    return path if os.path.exists(path) else None
+    if os.path.exists(path):
+        _log(f"Selection ours: {filename} (temp_ref={temp_ref}, rain={has_rain}, snow={has_snow})")
+        return path
+
+    _log(f"Image ours introuvable: {path}", always=True)
+    return None
 
 
 def paste_bear_illustration(base_image, image_path, box, margin=10):
@@ -403,14 +414,19 @@ def get_weather():
             today_min = "N/A"
             today_max = "N/A"
 
-        return {
+        weather = {
             "today_min": today_min,
             "today_max": today_max,
             "hourly": build_two_hour_slots(today_points),
             "today_trend": build_temp_trend(today_points, start_hour=7.5, end_hour=22.5),
         }
+        _log(
+            f"Meteo OK pour {CITY}: points={len(today_points)}, hourly={len(weather['hourly'])}, "
+            f"min={today_min}, max={today_max}"
+        )
+        return weather
     except Exception as exc:
-        print(f"Meteo indisponible ({exc}), utilisation d'une valeur par defaut.")
+        _log(f"Meteo indisponible ({exc}), utilisation d'une valeur par defaut.", always=True)
         return {
             "today_min": "N/A",
             "today_max": "N/A",
@@ -476,21 +492,21 @@ def get_events():
                             added_for_calendar += 1
                 except Exception as exc:
                     had_error = True
-                    print(f"Evenement ignore ({exc}) : {calendar_url}")
+                    _log(f"Evenement ignore ({exc}) : {calendar_url}", always=True)
 
-            print(f"Calendrier charge ({added_for_calendar} evenement(s)) : {calendar_url}")
+            _log(f"Calendrier charge ({added_for_calendar} evenement(s)) : {calendar_url}")
         except Exception as exc:
             had_error = True
-            print(f"Calendrier indisponible ({exc}) : {calendar_url}")
+            _log(f"Calendrier indisponible ({exc}) : {calendar_url}", always=True)
 
     if not had_success:
-        print("Aucun calendrier accessible, aucun evenement affiche.")
+        _log("Aucun calendrier accessible, aucun evenement affiche.", always=True)
         return [], []
 
     if events and all(event["summary"].strip().lower() == "busy" for event in events):
-        print("Les flux ICS retournent uniquement 'Busy'. Utilise les liens ICS prives (adresse secrete) ou rends les details des evenements publics dans Google Agenda.")
+        _log("Les flux ICS retournent uniquement 'Busy'. Utilise les liens ICS prives (adresse secrete) ou rends les details des evenements publics dans Google Agenda.", always=True)
     elif had_error:
-        print("Certains calendriers n'ont pas pu etre recuperes.")
+        _log("Certains calendriers n'ont pas pu etre recuperes.", always=True)
 
     events = sorted(events, key=lambda x: x["start"])
     today_events = [event for event in events if event["start"].date() == today]
@@ -627,9 +643,9 @@ def render_image(weather, events, output_path=None):
 
     right_box = (
         outer_left_margin + col_w,
-        today_y_start,
+        today_y_start - 10,
         img.width - outer_right_margin,
-        img.height - card_margin - 8,
+        img.height - card_margin + 5,
     )
     bear_path = select_bear_illustration(weather)
     paste_bear_illustration(img, bear_path, right_box, margin=0)

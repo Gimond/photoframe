@@ -55,6 +55,8 @@ def parse_args():
 def main():
     args = parse_args()
 
+    print("Demarrage du processus de generation d'ecran.")
+
     screen_name = args.screen
     if screen_name is None:
         schedule_file = args.schedule_file or os.getenv("SCREEN_SCHEDULE_FILE")

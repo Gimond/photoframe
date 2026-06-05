@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -5,6 +6,12 @@ import requests
 
 OPENMETEO_GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 OPENMETEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+WEATHER_DEBUG_LOGS = os.getenv("WEATHER_DEBUG_LOGS", "1").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _log(message, always=False):
+    if always or WEATHER_DEBUG_LOGS:
+        print(f"[weather_utils] {message}", flush=True)
 
 
 def format_temp(value):
@@ -60,6 +67,7 @@ def resolve_city_coordinates(city_name):
         queries.append({"name": base_name})
 
     for query in queries:
+        _log(f"Geocoding query: name={query['name']} country={query.get('country_code')}")
         params = {
             "name": query["name"],
             "count": 5,
@@ -77,6 +85,7 @@ def resolve_city_coordinates(city_name):
             continue
 
         best = results[0]
+        _log(f"Geocoding OK: {best.get('name')} ({best['latitude']}, {best['longitude']})")
         return best["latitude"], best["longitude"]
 
     raise ValueError(f"Ville introuvable: {city_name}")
@@ -84,6 +93,7 @@ def resolve_city_coordinates(city_name):
 
 def fetch_openmeteo_points(city_name):
     latitude, longitude = resolve_city_coordinates(city_name)
+    _log(f"Open-Meteo fetch start: city={city_name}, lat={latitude}, lon={longitude}")
     response = requests.get(
         OPENMETEO_FORECAST_URL,
         params={
@@ -126,6 +136,11 @@ def fetch_openmeteo_points(city_name):
             today_points.append(point)
         elif dt_city.date() == tomorrow:
             tomorrow_points.append(point)
+
+    _log(
+        f"Open-Meteo fetch OK: hours={len(times)}, today_points={len(today_points)}, "
+        f"tomorrow_points={len(tomorrow_points)}"
+    )
 
     return today, tomorrow, today_points, tomorrow_points
 
