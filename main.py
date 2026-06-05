@@ -11,6 +11,7 @@ from screens.screen_interface import validate_screen_module
 
 SCREEN_REGISTRY = {
     "meteo_calendar": "screens.meteo_calendar",
+    "meteo_calendar_bear": "screens.meteo_calendar_bear",
     "tmdb_random_list": "screens.tmdb_random_list",
 }
 

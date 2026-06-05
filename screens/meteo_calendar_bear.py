@@ -1,5 +1,7 @@
 import os
+import json
 from datetime import datetime, timedelta
+from functools import lru_cache
 from io import BytesIO
 
 import cairosvg
@@ -27,12 +29,45 @@ GOOGLE_CALENDAR_ICS_URLS = [
 
 SVG_DIR = os.path.join(frame.SCRIPT_DIR, "svg")
 FONTS_DIR = os.path.join(frame.SCRIPT_DIR, "fonts")
+BEAR_IMAGES_DIR = os.path.join(frame.SCRIPT_DIR, "images", "bear")
+BEAR_DISPLAY_CONFIG_PATH = os.path.join(frame.SCRIPT_DIR, "bear_display_config.json")
 CALENDAR_EVENT_COLORS = ["#F2C94C", "#9B51E0"]
 SIMULATE_LONG_EVENTS = os.getenv("SIMULATE_LONG_EVENTS", "0").strip().lower() in {
     "1",
     "true",
     "yes",
     "on",
+}
+
+DEFAULT_BEAR_DISPLAY_CONFIG = {
+    "available_images": [
+        "cold_clear.png",
+        "cool_clear.png",
+        "hot_sunny.png",
+        "mild_clear.png",
+        "rainy_cold.png",
+        "rainy_mild.png",
+        "snow_freezing.png",
+        "very_cold.png",
+        "warm_sunny.png",
+    ],
+    "default_image": "mild_clear.png",
+    "snow_icon_prefixes": ["13"],
+    "rain_icon_prefixes": ["09", "10", "11"],
+    "snow_image": "snow_freezing.png",
+    "rainy": {
+        "cold_max_temp": 8,
+        "cold_image": "rainy_cold.png",
+        "mild_image": "rainy_mild.png",
+    },
+    "temperature_rules": [
+        {"min_temp": 30, "image": "hot_sunny.png"},
+        {"min_temp": 24, "image": "warm_sunny.png"},
+        {"min_temp": 18, "image": "mild_clear.png"},
+        {"min_temp": 12, "image": "cool_clear.png"},
+        {"min_temp": 6, "image": "cold_clear.png"},
+        {"min_temp": -999, "image": "very_cold.png"},
+    ],
 }
 
 
@@ -143,6 +178,112 @@ def paste_svg_icon(base_image, icon_path, center_x, top_y, size):
         raise RuntimeError(f"Impossible de rendre l'icone SVG {icon_path}: {exc}") from exc
 
 
+def _numeric_temp(value):
+    return value if isinstance(value, (int, float)) else None
+
+
+@lru_cache(maxsize=1)
+def load_bear_display_config():
+    config = DEFAULT_BEAR_DISPLAY_CONFIG
+    try:
+        with open(BEAR_DISPLAY_CONFIG_PATH, "r", encoding="utf-8") as f:
+            loaded = json.load(f)
+        if isinstance(loaded, dict):
+            config = {
+                **DEFAULT_BEAR_DISPLAY_CONFIG,
+                **loaded,
+                "rainy": {
+                    **DEFAULT_BEAR_DISPLAY_CONFIG["rainy"],
+                    **(loaded.get("rainy") or {}),
+                },
+            }
+    except FileNotFoundError:
+        pass
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"Config ours invalide ({exc}), utilisation des regles par defaut.")
+
+    if not isinstance(config.get("available_images"), list):
+        config["available_images"] = DEFAULT_BEAR_DISPLAY_CONFIG["available_images"]
+    if not isinstance(config.get("temperature_rules"), list):
+        config["temperature_rules"] = DEFAULT_BEAR_DISPLAY_CONFIG["temperature_rules"]
+
+    rules = [
+        rule
+        for rule in config["temperature_rules"]
+        if isinstance(rule, dict) and isinstance(rule.get("min_temp"), (int, float)) and rule.get("image")
+    ]
+    config["temperature_rules"] = sorted(rules, key=lambda r: r["min_temp"], reverse=True)
+    return config
+
+
+def select_bear_illustration(weather):
+    config = load_bear_display_config()
+    available = set(config.get("available_images") or [])
+
+    hourly = weather.get("hourly") or []
+    icons = [(slot.get("icon") or "").lower() for slot in hourly]
+    temps = [slot.get("temp") for slot in hourly if isinstance(slot.get("temp"), (int, float))]
+
+    today_min = _numeric_temp(weather.get("today_min"))
+    today_max = _numeric_temp(weather.get("today_max"))
+
+    if today_min is not None and today_max is not None:
+        temp_ref = (today_min + today_max) / 2.0
+    elif temps:
+        temp_ref = sum(temps) / len(temps)
+    else:
+        temp_ref = None
+
+    snow_prefixes = tuple(config.get("snow_icon_prefixes") or ["13"])
+    rain_prefixes = tuple(config.get("rain_icon_prefixes") or ["09", "10", "11"])
+
+    has_snow = any(icon.startswith(snow_prefixes) for icon in icons)
+    has_rain = any(icon.startswith(rain_prefixes) for icon in icons)
+
+    if has_snow:
+        filename = config.get("snow_image") or config.get("default_image") or "mild_clear.png"
+    elif has_rain:
+        rainy = config.get("rainy") or {}
+        cold_max_temp = rainy.get("cold_max_temp", 8)
+        cold_image = rainy.get("cold_image") or "rainy_cold.png"
+        mild_image = rainy.get("mild_image") or "rainy_mild.png"
+        filename = cold_image if temp_ref is not None and temp_ref <= cold_max_temp else mild_image
+    elif temp_ref is None:
+        filename = config.get("default_image") or "mild_clear.png"
+    else:
+        filename = config.get("default_image") or "mild_clear.png"
+        for rule in config.get("temperature_rules") or []:
+            if temp_ref >= rule["min_temp"]:
+                filename = rule["image"]
+                break
+
+    if filename not in available:
+        filename = config.get("default_image") or "mild_clear.png"
+
+    path = os.path.join(BEAR_IMAGES_DIR, filename)
+    return path if os.path.exists(path) else None
+
+
+def paste_bear_illustration(base_image, image_path, box, margin=10):
+    if not image_path or not os.path.exists(image_path):
+        return
+
+    x1, y1, x2, y2 = box
+    max_w = max(1, int(x2 - x1 - (2 * margin)))
+    max_h = max(1, int(y2 - y1 - (2 * margin)))
+
+    with Image.open(image_path) as src:
+        bear = src.convert("RGBA")
+        scale = min(max_w / bear.width, max_h / bear.height)
+        new_w = max(1, int(round(bear.width * scale)))
+        new_h = max(1, int(round(bear.height * scale)))
+        resized = bear.resize((new_w, new_h), Image.Resampling.LANCZOS)
+
+    paste_x = int(round(x1 + ((x2 - x1 - new_w) / 2)))
+    paste_y = int(round(y1 + ((y2 - y1 - new_h) / 2)))
+    base_image.paste(resized, (paste_x, paste_y), resized)
+
+
 def truncate_to_width(draw, text, font, max_width):
     value = text or ""
     if draw.textbbox((0, 0), value, font=font)[2] <= max_width:
@@ -217,7 +358,6 @@ def draw_overflow_ellipsis(draw, event_row_y, start_x, font_tiny):
 def build_simulated_events():
     now = datetime.now().replace(minute=0, second=0, microsecond=0)
     today_date = now.date()
-    tomorrow_date = today_date + timedelta(days=1)
 
     base_titles = [
         "Point projet trimestriel avec equipe produit et partenaires externes",
@@ -231,39 +371,30 @@ def build_simulated_events():
         "Reunion transverse incidents production et plan de remediation",
     ]
 
-    today_events = []
-    tomorrow_events = []
+    events = []
 
     simulated_count = 9
     for i in range(simulated_count):
         hour = 8 + i
-        today_start = datetime.combine(today_date, datetime.min.time()).replace(hour=hour, minute=30)
-        tomorrow_start = datetime.combine(tomorrow_date, datetime.min.time()).replace(hour=hour, minute=45)
+        start = datetime.combine(today_date, datetime.min.time()).replace(hour=hour, minute=30)
 
-        today_events.append(
+        events.append(
             {
-                "start": today_start,
+                "start": start,
                 "summary": f"{base_titles[i % len(base_titles)]} - segment {i + 1}",
                 "source_index": i % 2,
             }
         )
-        tomorrow_events.append(
-            {
-                "start": tomorrow_start,
-                "summary": f"{base_titles[(simulated_count - 1 - i) % len(base_titles)]} - suivi detaille {i + 1}",
-                "source_index": (i + 1) % 2,
-            }
-        )
 
-    return today_events, tomorrow_events
+    return events
 
 
 def get_weather():
     try:
-        _, _, today_points, tomorrow_points = fetch_openmeteo_points(CITY)
+        _, _, today_points, _ = fetch_openmeteo_points(CITY)
 
-        if not today_points and not tomorrow_points:
-            raise ValueError("Aucune prevision disponible pour aujourd'hui/demain")
+        if not today_points:
+            raise ValueError("Aucune prevision disponible pour aujourd'hui")
 
         if today_points:
             today_min = round(min(p["temp"] for p in today_points))
@@ -272,23 +403,11 @@ def get_weather():
             today_min = "N/A"
             today_max = "N/A"
 
-        if tomorrow_points:
-            tomorrow_min = round(min(p["temp"] for p in tomorrow_points))
-            tomorrow_max = round(max(p["temp"] for p in tomorrow_points))
-            tomorrow_icon = min(tomorrow_points, key=lambda p: abs(p["dt"].hour - 12))["icon"]
-        else:
-            tomorrow_min = "N/A"
-            tomorrow_max = "N/A"
-            tomorrow_icon = None
-
         return {
             "today_min": today_min,
             "today_max": today_max,
             "hourly": build_two_hour_slots(today_points),
             "today_trend": build_temp_trend(today_points, start_hour=7.5, end_hour=22.5),
-            "tomorrow_min": tomorrow_min,
-            "tomorrow_max": tomorrow_max,
-            "tomorrow_icon": tomorrow_icon,
         }
     except Exception as exc:
         print(f"Meteo indisponible ({exc}), utilisation d'une valeur par defaut.")
@@ -297,9 +416,6 @@ def get_weather():
             "today_max": "N/A",
             "hourly": [],
             "today_trend": [],
-            "tomorrow_min": "N/A",
-            "tomorrow_max": "N/A",
-            "tomorrow_icon": None,
         }
 
 
@@ -378,8 +494,7 @@ def get_events():
 
     events = sorted(events, key=lambda x: x["start"])
     today_events = [event for event in events if event["start"].date() == today]
-    tomorrow_events = [event for event in events if event["start"].date() == tomorrow]
-    return today_events, tomorrow_events
+    return today_events
 
 
 def render_image(weather, events, output_path=None):
@@ -394,20 +509,15 @@ def render_image(weather, events, output_path=None):
     font_title = load_font(24, bold=True)
     font_tiny = load_font(19, bold=True)
 
-    today_events, tomorrow_events = events
+    today_events = events
 
     if SIMULATE_LONG_EVENTS:
-        today_events, tomorrow_events = build_simulated_events()
-
-    tomorrow_section_h = 120
-    tomorrow_top = img.height - tomorrow_section_h
+        today_events = build_simulated_events()
 
     card_margin = 10
     card_radius = 12
-    today_card = (card_margin, card_margin, img.width - card_margin, tomorrow_top - 16)
-    tomorrow_card = (card_margin, tomorrow_top, img.width - card_margin, img.height - card_margin)
+    today_card = (card_margin, card_margin, img.width - card_margin, img.height - card_margin)
     draw.rounded_rectangle(today_card, radius=card_radius, fill="white")
-    draw.rounded_rectangle(tomorrow_card, radius=card_radius, fill="white")
 
     y = draw_header_line(
         draw,
@@ -487,78 +597,42 @@ def render_image(weather, events, output_path=None):
         draw.text((20, y), "Previsions horaires indisponibles.", fill="black", font=font_small)
         y += 34
 
-    # Bottom-anchored "Demain" block.
-    max_y_today = tomorrow_top - 12
+    # Keep only today's events and render them in the left half.
+    today = datetime.now().date()
+    shown_today = [event for event in today_events if event["start"].date() == today]
+    hidden_today = 0
 
-    max_today_events = 8
-    shown_today = today_events[:max_today_events]
-    hidden_today = max(0, len(today_events) - len(shown_today))
-
-    # 2 columns x 4 rows for today's events.
-    left_margin = 20
-    right_margin = 20
-    column_gap = 26
-    available_w = img.width - left_margin - right_margin
-    col_w = int((available_w - column_gap) / 2)
-    left_x = left_margin
-    right_x = left_x + col_w + column_gap
+    max_y_today = img.height - card_margin - 10
+    outer_left_margin = 20
+    outer_right_margin = 20
+    content_w = img.width - outer_left_margin - outer_right_margin
+    col_w = int(content_w / 2)
+    left_x = outer_left_margin
     today_y_start = y
-
-    left_column_events = shown_today[:4]
-    right_column_events = shown_today[4:8]
     last_rendered_today = None
 
     y_left = today_y_start
-    for event in left_column_events:
+    for event in shown_today:
         if y_left + 30 > max_y_today:
             hidden_today += 1
             continue
         last_rendered_today = {"y": y_left, "x": left_x}
         y_left = draw_calendar_event_row(draw, y_left, event, font_tiny, left_x, left_x + col_w)
 
-    y_right = today_y_start
-    for event in right_column_events:
-        if y_right + 30 > max_y_today:
-            hidden_today += 1
-            continue
-        last_rendered_today = {"y": y_right, "x": right_x}
-        y_right = draw_calendar_event_row(draw, y_right, event, font_tiny, right_x, right_x + col_w)
-
     if not shown_today and today_y_start + 30 <= max_y_today:
         draw.text((left_x, today_y_start), "Aucun evenement.", fill="black", font=font_small)
 
     if hidden_today > 0 and last_rendered_today:
-        draw_overflow_ellipsis(draw, last_rendered_today["y"], last_rendered_today["x"], font_tiny)
+        draw_overflow_ellipsis(draw, last_rendered_today["y"] - 5, last_rendered_today["x"], font_tiny)
 
-    # Left column: weather icon + title + temperatures.
-    left_x = 20
-    left_col_w = 230
-    icon_size = 76
-    icon_center_x = left_x + int(icon_size / 2)
-    tomorrow_icon_path = openweather_icon_to_svg(weather["tomorrow_icon"])
-    paste_svg_icon(img, tomorrow_icon_path, center_x=icon_center_x, top_y=tomorrow_top + 22, size=icon_size)
-
-    title_x = left_x + icon_size + 18
-    draw.text((title_x, tomorrow_top + 22), "Demain", fill="black", font=font_large)
-    tomorrow_temps = f"{weather['tomorrow_min']}° / {weather['tomorrow_max']}°"
-    draw.text((title_x, tomorrow_top + 62), tomorrow_temps, fill="black", font=font_title)
-
-    # Right column: events list.
-    right_x = left_x + left_col_w + 20
-    right_max_x = img.width - 45
-    max_tomorrow_events = 3
-    shown_tomorrow = tomorrow_events[:max_tomorrow_events]
-    hidden_tomorrow = max(0, len(tomorrow_events) - len(shown_tomorrow))
-    last_rendered_tomorrow = None
-
-    y_events = tomorrow_top + 10
-    for event in shown_tomorrow:
-        last_rendered_tomorrow = {"y": y_events, "x": right_x}
-        y_events = draw_calendar_event_row(draw, y_events, event, font_tiny, right_x, right_max_x)
-    if hidden_tomorrow > 0:
-        draw_overflow_ellipsis(draw, last_rendered_tomorrow["y"], last_rendered_tomorrow["x"], font_tiny)
-    elif not tomorrow_events:
-        draw.text((right_x, y_events), "Aucun evenement.", fill="black", font=font_small)
+    right_box = (
+        outer_left_margin + col_w,
+        today_y_start,
+        img.width - outer_right_margin,
+        img.height - card_margin - 8,
+    )
+    bear_path = select_bear_illustration(weather)
+    paste_bear_illustration(img, bear_path, right_box, margin=0)
 
     img.save(target_path)
     return target_path

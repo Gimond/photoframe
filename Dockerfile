@@ -1,11 +1,12 @@
 FROM python:3.12-slim
 
+# Désactive le buffer de sortie pour voir les logs en temps réel
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# System libs required by CairoSVG rendering pipeline.
+# Installe les dépendances système (y compris cron)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         cron \
@@ -15,19 +16,26 @@ RUN apt-get update \
         libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Installe les dépendances Python
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copie le code source
 COPY . .
 
+# Crée un utilisateur dédié
 RUN useradd -m appuser && chown -R appuser:appuser /app
 
-# Cron job: execute the scheduled action every 15 minutes.
-# Send output to container stdout/stderr so Coolify can collect logs.
-RUN echo "*/15 * * * * appuser python /app/main.py >> /proc/1/fd/1 2>> /proc/1/fd/2" > /etc/crontab \
+# --- Configuration de cron ---
+# 1. Crée un fichier de log pour cron (optionnel, mais utile pour le débogage)
+RUN touch /var/log/cron.log && chmod 666 /var/log/cron.log
+
+# 2. Configure la tâche cron pour rediriger les logs vers stdout/stderr
+#    Utilise `>> /proc/1/fd/1` pour stdout et `2>> /proc/1/fd/2` pour stderr
+#    (Le PID 1 dans Docker est le processus principal, ici `cron`).
+RUN echo "*/5 * * * * appuser python /app/main.py >> /proc/1/fd/1 2>> /proc/1/fd/2" > /etc/crontab \
     && chmod 0644 /etc/crontab
 
-# Useful debug command if needed when troubleshooting container lifecycle:
-# tail -f /dev/null
-
-CMD ["cron", "-f"]
+# 3. Active cron en arrière-plan et garde le container actif avec `tail -f /dev/null`
+#    (Si `cron` plante, le container reste actif grâce à `tail -f /dev/null`)
+CMD ["sh", "-c", "service cron start && tail -f /dev/null"]

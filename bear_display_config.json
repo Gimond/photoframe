@@ -1,0 +1,30 @@
+{
+  "available_images": [
+    "cold_clear.png",
+    "cool_clear.png",
+    "hot_sunny.png",
+    "mild_clear.png",
+    "rainy_cold.png",
+    "rainy_mild.png",
+    "snow_freezing.png",
+    "very_cold.png",
+    "warm_sunny.png"
+  ],
+  "default_image": "mild_clear.png",
+  "snow_icon_prefixes": ["13"],
+  "rain_icon_prefixes": ["09", "10", "11"],
+  "snow_image": "snow_freezing.png",
+  "rainy": {
+    "cold_max_temp": 8,
+    "cold_image": "rainy_cold.png",
+    "mild_image": "rainy_mild.png"
+  },
+  "temperature_rules": [
+    { "min_temp": 30, "image": "hot_sunny.png" },
+    { "min_temp": 24, "image": "warm_sunny.png" },
+    { "min_temp": 18, "image": "mild_clear.png" },
+    { "min_temp": 12, "image": "cool_clear.png" },
+    { "min_temp": 6, "image": "cold_clear.png" },
+    { "min_temp": -999, "image": "very_cold.png" }
+  ]
+}
