@@ -3,12 +3,12 @@
   "rules": [
     {
       "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
-      "at": "07:00",
+      "from": "07:00","to": "09:00",
       "screen": "meteo_calendar"
     },
     {
       "days": ["sat"],
-      "at": "16:30",
+      "from": "16:30","to": "19:00",
       "screen": "tmdb_random_list"
     }
   ]

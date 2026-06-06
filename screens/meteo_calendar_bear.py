@@ -56,18 +56,17 @@ DEFAULT_BEAR_DISPLAY_CONFIG = {
     "snow_icon_prefixes": ["13"],
     "rain_icon_prefixes": ["09", "10", "11"],
     "snow_image": "snow_freezing.png",
-    "rainy": {
-        "cold_max_temp": 8,
-        "cold_image": "rainy_cold.png",
-        "mild_image": "rainy_mild.png",
-    },
+    "rainy_temperature_rules": [
+        {"avg_temp_max": 8, "image": "rainy_cold.png"},
+        {"avg_temp_min": 8, "image": "rainy_mild.png"},
+    ],
     "temperature_rules": [
-        {"min_temp": 30, "image": "hot_sunny.png"},
-        {"min_temp": 24, "image": "warm_sunny.png"},
-        {"min_temp": 18, "image": "mild_clear.png"},
-        {"min_temp": 12, "image": "cool_clear.png"},
-        {"min_temp": 6, "image": "cold_clear.png"},
-        {"min_temp": -999, "image": "very_cold.png"},
+        {"avg_temp_min": 30, "image": "hot_sunny.png"},
+        {"avg_temp_min": 24, "image": "warm_sunny.png"},
+        {"avg_temp_min": 18, "image": "mild_clear.png"},
+        {"avg_temp_min": 12, "image": "cool_clear.png"},
+        {"avg_temp_min": 6, "image": "cold_clear.png"},
+        {"avg_temp_min": -999, "image": "very_cold.png"},
     ],
 }
 
@@ -184,8 +183,68 @@ def paste_svg_icon(base_image, icon_path, center_x, top_y, size):
         raise RuntimeError(f"Impossible de rendre l'icone SVG {icon_path}: {exc}") from exc
 
 
-def _numeric_temp(value):
-    return value if isinstance(value, (int, float)) else None
+def _normalize_temperature_rules(rules):
+    normalized = []
+    for rule in rules or []:
+        if not isinstance(rule, dict) or not rule.get("image"):
+            continue
+
+        avg_temp_min = rule.get("avg_temp_min")
+        avg_temp_max = rule.get("avg_temp_max")
+
+        if not isinstance(avg_temp_min, (int, float)) and not isinstance(avg_temp_max, (int, float)):
+            continue
+
+        normalized.append(
+            {
+                "avg_temp_min": avg_temp_min,
+                "avg_temp_max": avg_temp_max,
+                "image": rule["image"],
+            }
+        )
+
+    return sorted(
+        normalized,
+        key=lambda rule: (
+            rule["avg_temp_min"] if isinstance(rule.get("avg_temp_min"), (int, float)) else float("-inf"),
+            rule["avg_temp_max"] if isinstance(rule.get("avg_temp_max"), (int, float)) else float("inf"),
+        ),
+        reverse=True,
+    )
+
+
+def _select_image_from_rules(rules, avg_temp, default_image):
+    if avg_temp is None:
+        return default_image
+
+    for rule in rules:
+        avg_temp_min = rule.get("avg_temp_min")
+        avg_temp_max = rule.get("avg_temp_max")
+        if isinstance(avg_temp_min, (int, float)) and avg_temp < avg_temp_min:
+            continue
+        if isinstance(avg_temp_max, (int, float)) and avg_temp > avg_temp_max:
+            continue
+
+        return rule["image"]
+
+    return default_image
+
+
+def _compute_avg_temp_8_to_20(hourly_slots):
+    temps = []
+    for slot in hourly_slots or []:
+        if not isinstance(slot, dict):
+            continue
+        hour = slot.get("hour")
+        temp = slot.get("temp")
+        if not isinstance(hour, int) or not isinstance(temp, (int, float)):
+            continue
+        if 8 <= hour <= 20:
+            temps.append(float(temp))
+
+    if not temps:
+        return None
+    return sum(temps) / len(temps)
 
 
 @lru_cache(maxsize=1)
@@ -198,10 +257,6 @@ def load_bear_display_config():
             config = {
                 **DEFAULT_BEAR_DISPLAY_CONFIG,
                 **loaded,
-                "rainy": {
-                    **DEFAULT_BEAR_DISPLAY_CONFIG["rainy"],
-                    **(loaded.get("rainy") or {}),
-                },
             }
     except FileNotFoundError:
         pass
@@ -210,15 +265,14 @@ def load_bear_display_config():
 
     if not isinstance(config.get("available_images"), list):
         config["available_images"] = DEFAULT_BEAR_DISPLAY_CONFIG["available_images"]
-    if not isinstance(config.get("temperature_rules"), list):
-        config["temperature_rules"] = DEFAULT_BEAR_DISPLAY_CONFIG["temperature_rules"]
+    config["temperature_rules"] = _normalize_temperature_rules(
+        config.get("temperature_rules") or DEFAULT_BEAR_DISPLAY_CONFIG["temperature_rules"]
+    )
 
-    rules = [
-        rule
-        for rule in config["temperature_rules"]
-        if isinstance(rule, dict) and isinstance(rule.get("min_temp"), (int, float)) and rule.get("image")
-    ]
-    config["temperature_rules"] = sorted(rules, key=lambda r: r["min_temp"], reverse=True)
+    rainy_rules = _normalize_temperature_rules(config.get("rainy_temperature_rules"))
+    if not rainy_rules:
+        rainy_rules = _normalize_temperature_rules(DEFAULT_BEAR_DISPLAY_CONFIG["rainy_temperature_rules"])
+    config["rainy_temperature_rules"] = rainy_rules
     return config
 
 
@@ -228,17 +282,7 @@ def select_bear_illustration(weather):
 
     hourly = weather.get("hourly") or []
     icons = [(slot.get("icon") or "").lower() for slot in hourly]
-    temps = [slot.get("temp") for slot in hourly if isinstance(slot.get("temp"), (int, float))]
-
-    today_min = _numeric_temp(weather.get("today_min"))
-    today_max = _numeric_temp(weather.get("today_max"))
-
-    if today_min is not None and today_max is not None:
-        temp_ref = (today_min + today_max) / 2.0
-    elif temps:
-        temp_ref = sum(temps) / len(temps)
-    else:
-        temp_ref = None
+    avg_temp = _compute_avg_temp_8_to_20(hourly)
 
     snow_prefixes = tuple(config.get("snow_icon_prefixes") or ["13"])
     rain_prefixes = tuple(config.get("rain_icon_prefixes") or ["09", "10", "11"])
@@ -249,26 +293,26 @@ def select_bear_illustration(weather):
     if has_snow:
         filename = config.get("snow_image") or config.get("default_image") or "mild_clear.png"
     elif has_rain:
-        rainy = config.get("rainy") or {}
-        cold_max_temp = rainy.get("cold_max_temp", 8)
-        cold_image = rainy.get("cold_image") or "rainy_cold.png"
-        mild_image = rainy.get("mild_image") or "rainy_mild.png"
-        filename = cold_image if temp_ref is not None and temp_ref <= cold_max_temp else mild_image
-    elif temp_ref is None:
+        filename = _select_image_from_rules(
+            config.get("rainy_temperature_rules") or [],
+            avg_temp,
+            config.get("default_image") or "mild_clear.png",
+        )
+    elif avg_temp is None:
         filename = config.get("default_image") or "mild_clear.png"
     else:
-        filename = config.get("default_image") or "mild_clear.png"
-        for rule in config.get("temperature_rules") or []:
-            if temp_ref >= rule["min_temp"]:
-                filename = rule["image"]
-                break
+        filename = _select_image_from_rules(
+            config.get("temperature_rules") or [],
+            avg_temp,
+            config.get("default_image") or "mild_clear.png",
+        )
 
     if filename not in available:
         filename = config.get("default_image") or "mild_clear.png"
 
     path = os.path.join(BEAR_IMAGES_DIR, filename)
     if os.path.exists(path):
-        _log(f"Selection ours: {filename} (temp_ref={temp_ref}, rain={has_rain}, snow={has_snow})")
+        _log(f"Selection ours: {filename} (avg_temp={avg_temp}, rain={has_rain}, snow={has_snow})")
         return path
 
     _log(f"Image ours introuvable: {path}", always=True)

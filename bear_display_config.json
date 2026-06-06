@@ -14,17 +14,16 @@
   "snow_icon_prefixes": ["13"],
   "rain_icon_prefixes": ["09", "10", "11"],
   "snow_image": "snow_freezing.png",
-  "rainy": {
-    "cold_max_temp": 8,
-    "cold_image": "rainy_cold.png",
-    "mild_image": "rainy_mild.png"
-  },
+  "rainy_temperature_rules": [
+    { "avg_temp_max": 8, "image": "rainy_cold.png" },
+    { "avg_temp_min": 8, "image": "rainy_mild.png" }
+  ],
   "temperature_rules": [
-    { "min_temp": 30, "image": "hot_sunny.png" },
-    { "min_temp": 24, "image": "warm_sunny.png" },
-    { "min_temp": 18, "image": "mild_clear.png" },
-    { "min_temp": 12, "image": "cool_clear.png" },
-    { "min_temp": 6, "image": "cold_clear.png" },
-    { "min_temp": -999, "image": "very_cold.png" }
+    { "avg_temp_min": 30, "image": "hot_sunny.png" },
+    { "avg_temp_min": 24, "image": "warm_sunny.png" },
+    { "avg_temp_min": 18, "image": "mild_clear.png" },
+    { "avg_temp_min": 12, "image": "cool_clear.png" },
+    { "avg_temp_min": 6, "image": "cold_clear.png" },
+    { "avg_temp_min": -999, "image": "very_cold.png" }
   ]
 }

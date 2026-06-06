@@ -36,7 +36,8 @@ DEFAULT_SCREEN = "meteo_calendar"
 @dataclass(frozen=True)
 class ScheduledRule:
     days: tuple[int, ...]
-    at: time
+    start: time
+    end: time
     screen: str
     order: int
 
@@ -114,55 +115,82 @@ def build_rules(schedule_data):
         if not screen:
             raise ValueError("Chaque regle doit definir un 'screen'")
 
-        at = _parse_time(str(raw_rule.get("at", "")).strip())
+        start = _parse_time(str(raw_rule.get("from", "")).strip())
+        end = _parse_time(str(raw_rule.get("to", "")).strip())
+        if start == end:
+            raise ValueError("Les champs 'from' et 'to' ne peuvent pas etre egaux")
+
         days = _normalize_days(raw_rule.get("days", []))
-        rules.append(ScheduledRule(days=days, at=at, screen=screen, order=order))
+        rules.append(ScheduledRule(days=days, start=start, end=end, screen=screen, order=order))
 
     return rules
 
 
-def _rule_run_id(rule, scheduled_dt):
-    return f"{scheduled_dt.strftime('%Y-%m-%d')}|{rule.at.strftime('%H:%M')}|{rule.screen}|{rule.order}"
+def _is_time_in_window(current_time, start_time, end_time):
+    if start_time < end_time:
+        return start_time <= current_time < end_time
+    return current_time >= start_time or current_time < end_time
+
+
+def _window_start_datetime(current_dt, rule):
+    start_date = current_dt.date()
+    if rule.start > rule.end and current_dt.time() < rule.end:
+        start_date = start_date - timedelta(days=1)
+    return datetime.combine(start_date, rule.start)
+
+
+def _window_id(rule, window_start_dt):
+    return f"{window_start_dt.strftime('%Y-%m-%d')}|{rule.start.strftime('%H:%M')}|{rule.end.strftime('%H:%M')}|{rule.screen}|{rule.order}"
 
 
 def select_screen_from_schedule(schedule_path, now=None, window_minutes=30, state_path=None):
+    del window_minutes
     current_dt = now or datetime.now()
     schedule_data = load_schedule(schedule_path)
-    default_screen = str(schedule_data.get("default", DEFAULT_SCREEN)).strip() or DEFAULT_SCREEN
     rules = build_rules(schedule_data)
     state_file = state_path or (str(Path(schedule_path).with_name(".schedule_state.json")))
     state = _load_state(state_file)
-    already_run = set(state.get("executed_runs", []))
+    active_window_id = state.get("active_window_id")
 
-    due_candidates = []
+    active_candidates = []
     for rule in rules:
-        if current_dt.weekday() not in rule.days:
+        if not _is_time_in_window(current_dt.time(), rule.start, rule.end):
             continue
 
-        scheduled_dt = datetime.combine(current_dt.date(), rule.at)
-        age = current_dt - scheduled_dt
-        if age < timedelta(0):
-            continue
-        if age > timedelta(minutes=window_minutes):
+        window_start_dt = _window_start_datetime(current_dt, rule)
+        if window_start_dt.weekday() not in rule.days:
             continue
 
-        run_id = _rule_run_id(rule, scheduled_dt)
-        if run_id in already_run:
-            continue
+        active_candidates.append((rule, window_start_dt))
 
-        due_candidates.append((rule, scheduled_dt, run_id))
+    if active_candidates:
+        chosen_rule, window_start_dt = max(active_candidates, key=lambda item: (item[1], item[0].order))
+        current_window_id = _window_id(chosen_rule, window_start_dt)
+        if active_window_id == current_window_id:
+            info = (
+                f"fenetre active deja traitee: {chosen_rule.screen} "
+                f"({chosen_rule.start.strftime('%H:%M')}->{chosen_rule.end.strftime('%H:%M')})"
+            )
+            return None, info, "none"
 
-    if due_candidates:
-        chosen_rule, scheduled_dt, run_id = max(due_candidates, key=lambda item: (item[0].at, item[0].order))
-        already_run.add(run_id)
-        state["executed_runs"] = sorted(already_run)
+        state["active_window_id"] = current_window_id
+        state["active_screen"] = chosen_rule.screen
         _save_state(state_file, state)
 
         info = (
-            f"{chosen_rule.screen} (regle {chosen_rule.at.strftime('%H:%M')} / "
-            f"jour {DAY_LABELS[current_dt.weekday()]})"
+            f"entree fenetre: {chosen_rule.screen} "
+            f"({chosen_rule.start.strftime('%H:%M')}->{chosen_rule.end.strftime('%H:%M')}, "
+            f"jour {DAY_LABELS[window_start_dt.weekday()]})"
         )
-        return chosen_rule.screen, info
+        return chosen_rule.screen, info, "enter_window"
 
-    info = f"aucune regle due dans les {window_minutes} min; aucune action"
-    return None, info
+    if active_window_id:
+        previous_screen = state.get("active_screen") or "inconnu"
+        state["active_window_id"] = None
+        state["active_screen"] = None
+        _save_state(state_file, state)
+        info = f"sortie fenetre: {previous_screen}"
+        return None, info, "exit_window"
+
+    info = "aucune fenetre active; aucune action"
+    return None, info, "none"

@@ -58,6 +58,7 @@ def main():
     print("Demarrage du processus de generation d'ecran.")
 
     screen_name = args.screen
+    schedule_action = "manual"
     if screen_name is None:
         schedule_file = args.schedule_file or os.getenv("SCREEN_SCHEDULE_FILE")
         if not schedule_file:
@@ -71,13 +72,26 @@ def main():
             schedule_state_file = str(Path(frame.SCRIPT_DIR) / schedule_state_file)
 
         schedule_window_minutes = int(os.getenv("SCREEN_SCHEDULE_WINDOW_MINUTES", "30"))
-        screen_name, schedule_info = select_screen_from_schedule(
+        screen_name, schedule_info, schedule_action = select_screen_from_schedule(
             schedule_file,
             now=datetime.now(),
             window_minutes=schedule_window_minutes,
             state_path=schedule_state_file,
         )
         print(f"Planning charge: {schedule_info}")
+
+        if schedule_action == "none":
+            return
+
+        if schedule_action == "exit_window":
+            config_ok = frame.configure_photoframe_auto_rotate(True)
+            rotate_ok = frame.rotate_photoframe()
+            if config_ok and rotate_ok:
+                print("Sortie de fenetre: auto_rotate reactive et rotation demandee.")
+            else:
+                print("Sortie de fenetre: echec partiel sur /config ou /rotate.")
+            return
+
         if screen_name is None:
             return
 
@@ -92,6 +106,11 @@ def main():
     if args.save_local:
         print(f"Image enregistree localement: {image_path}")
         return
+
+    if schedule_action == "enter_window":
+        if not frame.configure_photoframe_auto_rotate(False):
+            print("Echec de la configuration auto_rotate=false.")
+            return
 
     if frame.send_to_photoframe(image_path=image_path):
         print("Image envoyee avec succes !")
