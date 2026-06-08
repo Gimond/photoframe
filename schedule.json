@@ -4,11 +4,16 @@
     {
       "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
       "from": "07:00","to": "09:00",
-      "screen": "meteo_calendar"
+      "screen": "meteo_calendar_bear_today"
+    },
+        {
+      "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+      "from": "18:00","to": "21:00",
+      "screen": "meteo_calendar_bear_tomorrow"
     },
     {
       "days": ["sat"],
-      "from": "16:30","to": "19:00",
+      "from": "17:30","to": "19:00",
       "screen": "tmdb_random_list"
     }
   ]

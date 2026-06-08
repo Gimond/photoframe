@@ -39,6 +39,8 @@ Variables principales:
 - TMDB_LIST_ID: ID de liste TMDB.
 - SCREEN_SCHEDULE_FILE: fichier de planning (par défaut `schedule.json`).
 - SCREEN_SCHEDULE_STATE_FILE: état des règles déjà exécutées.
+- SCREEN_SCHEDULE_TIMEZONE: timezone utilisée pour comparer les règles horaires (ex: `Europe/Paris`).
+- TZ: variable timezone standard, utilisée si `SCREEN_SCHEDULE_TIMEZONE` est vide.
 
 ## Exécution locale (sans Docker)
 
@@ -165,6 +167,20 @@ Sous WSL, la résolution `.local` peut échouer. Utiliser une IP directe dans `P
 
 ```text
 PHOTOFRAME_API_URLS=http://192.168.1.50/api/
+```
+
+### Cron actif mais "aucune fenetre active"
+
+Si les logs affichent souvent `Planning charge: aucune fenetre active...`, verifier la timezone utilisee dans le conteneur.
+
+- Les fenetres du `schedule.json` sont comparees a l'heure locale du scheduler.
+- En Docker, sans configuration, l'heure peut etre differente (souvent UTC).
+
+Configurer dans `.env`:
+
+```text
+SCREEN_SCHEDULE_TIMEZONE=Europe/Paris
+TZ=Europe/Paris
 ```
 
 ## Arborescence utile

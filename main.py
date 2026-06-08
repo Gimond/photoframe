@@ -1,6 +1,5 @@
 import argparse
 import importlib
-from datetime import datetime
 import os
 from pathlib import Path
 
@@ -76,7 +75,6 @@ def main():
 
         screen_name, schedule_info, schedule_action = select_screen_from_schedule(
             schedule_file,
-            now=datetime.now(),
             state_path=schedule_state_file,
         )
         print(f"Planning charge: {schedule_info}")

@@ -1,7 +1,9 @@
 import json
+import os
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 DAY_ALIASES = {
@@ -143,8 +145,31 @@ def _window_id(rule, window_start_dt):
     return f"{window_start_dt.strftime('%Y-%m-%d')}|{rule.start.strftime('%H:%M')}|{rule.end.strftime('%H:%M')}|{rule.screen}|{rule.order}"
 
 
+def _schedule_now():
+    schedule_tz = (
+        os.getenv("SCREEN_SCHEDULE_TIMEZONE", "").strip()
+        or os.getenv("TZ", "").strip()
+    )
+    if not schedule_tz:
+        return datetime.now(), None
+
+    try:
+        dt = datetime.now(ZoneInfo(schedule_tz)).replace(tzinfo=None)
+        return dt, schedule_tz
+    except ZoneInfoNotFoundError:
+        return datetime.now(), None
+
+
 def select_screen_from_schedule(schedule_path, now=None, state_path=None):
-    current_dt = now or datetime.now()
+    tz_label = None
+    if now is None:
+        current_dt, tz_label = _schedule_now()
+    else:
+        current_dt = now
+
+    if current_dt.tzinfo is not None:
+        current_dt = current_dt.replace(tzinfo=None)
+
     schedule_data = load_schedule(schedule_path)
     rules = build_rules(schedule_data)
     state_file = state_path or (str(Path(schedule_path).with_name(".schedule_state.json")))
@@ -176,10 +201,11 @@ def select_screen_from_schedule(schedule_path, now=None, state_path=None):
         state["active_screen"] = chosen_rule.screen
         _save_state(state_file, state)
 
+        tz_info = f", tz {tz_label}" if tz_label else ""
         info = (
             f"entree fenetre: {chosen_rule.screen} "
             f"({chosen_rule.start.strftime('%H:%M')}->{chosen_rule.end.strftime('%H:%M')}, "
-            f"jour {DAY_LABELS[window_start_dt.weekday()]})"
+            f"jour {DAY_LABELS[window_start_dt.weekday()]}, now {current_dt.strftime('%H:%M')}{tz_info})"
         )
         return chosen_rule.screen, info, "enter_window"
 
@@ -188,8 +214,13 @@ def select_screen_from_schedule(schedule_path, now=None, state_path=None):
         state["active_window_id"] = None
         state["active_screen"] = None
         _save_state(state_file, state)
-        info = f"sortie fenetre: {previous_screen}"
+        tz_info = f", tz {tz_label}" if tz_label else ""
+        info = f"sortie fenetre: {previous_screen} (now {current_dt.strftime('%H:%M')}{tz_info})"
         return None, info, "exit_window"
 
-    info = "aucune fenetre active; aucune action"
+    tz_info = f", tz {tz_label}" if tz_label else ""
+    info = (
+        f"aucune fenetre active (now {current_dt.strftime('%H:%M')}, "
+        f"jour {DAY_LABELS[current_dt.weekday()]}{tz_info}); aucune action"
+    )
     return None, info, "none"
