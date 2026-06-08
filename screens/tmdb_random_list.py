@@ -3,38 +3,16 @@ import random
 from io import BytesIO
 
 import requests
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 import frame
+from screens.utils import load_font
 
 
 TMDB_API_KEY = os.getenv("TMDB_API_KEY", "")
 TMDB_LIST_ID = os.getenv("TMDB_LIST_ID", "")
 TMDB_API_BASE_URL = os.getenv("TMDB_API_BASE_URL", "https://api.themoviedb.org/3")
 TMDB_IMAGE_BASE_URL = os.getenv("TMDB_IMAGE_BASE_URL", "https://image.tmdb.org/t/p/w342")
-
-FONTS_DIR = os.path.join(frame.SCRIPT_DIR, "fonts")
-
-
-def load_font(size, bold=False):
-    weight = "Bold" if bold else "Regular"
-
-    # Choose the nearest available source variant to avoid awkward scaling
-    # artifacts on the non-anti-aliased e-ink render.
-    variant_sizes = ["12", "16", "21"]
-    preferred_sizes = sorted(variant_sizes, key=lambda v: abs(int(v) - size))
-
-    for variant_size in preferred_sizes:
-        font_path = os.path.join(FONTS_DIR, f"TRMNL{variant_size}-{weight}.ttf")
-        if os.path.exists(font_path):
-            try:
-                return ImageFont.truetype(font_path, size)
-            except OSError:
-                continue
-
-    raise FileNotFoundError(
-        f"Police TRMNL introuvable ou illisible dans {FONTS_DIR} (poids {weight})."
-    )
 
 
 def _truncate(text, max_len):

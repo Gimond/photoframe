@@ -143,8 +143,7 @@ def _window_id(rule, window_start_dt):
     return f"{window_start_dt.strftime('%Y-%m-%d')}|{rule.start.strftime('%H:%M')}|{rule.end.strftime('%H:%M')}|{rule.screen}|{rule.order}"
 
 
-def select_screen_from_schedule(schedule_path, now=None, window_minutes=30, state_path=None):
-    del window_minutes
+def select_screen_from_schedule(schedule_path, now=None, state_path=None):
     current_dt = now or datetime.now()
     schedule_data = load_schedule(schedule_path)
     rules = build_rules(schedule_data)

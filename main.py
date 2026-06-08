@@ -10,8 +10,11 @@ from screens.screen_interface import validate_screen_module
 
 
 SCREEN_REGISTRY = {
-    "meteo_calendar": "screens.meteo_calendar",
-    "meteo_calendar_bear": "screens.meteo_calendar_bear",
+    "meteo_calendar": "screens.meteo_calendar_glance",
+    "meteo_calendar_glance": "screens.meteo_calendar_glance",
+    "meteo_calendar_bear": "screens.meteo_calendar_bear_today",
+    "meteo_calendar_bear_today": "screens.meteo_calendar_bear_today",
+    "meteo_calendar_bear_tomorrow": "screens.meteo_calendar_bear_tomorrow",
     "tmdb_random_list": "screens.tmdb_random_list",
 }
 
@@ -71,11 +74,9 @@ def main():
         if schedule_state_file and not Path(schedule_state_file).is_absolute():
             schedule_state_file = str(Path(frame.SCRIPT_DIR) / schedule_state_file)
 
-        schedule_window_minutes = int(os.getenv("SCREEN_SCHEDULE_WINDOW_MINUTES", "30"))
         screen_name, schedule_info, schedule_action = select_screen_from_schedule(
             schedule_file,
             now=datetime.now(),
-            window_minutes=schedule_window_minutes,
             state_path=schedule_state_file,
         )
         print(f"Planning charge: {schedule_info}")

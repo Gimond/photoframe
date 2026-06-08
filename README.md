@@ -14,7 +14,10 @@ Génération et envoi d'écrans pour un cadre photo (e-ink), avec exécution pla
 ## Écrans disponibles
 
 - meteo_calendar
+- meteo_calendar_glance
 - meteo_calendar_bear
+- meteo_calendar_bear_today
+- meteo_calendar_bear_tomorrow
 - tmdb_random_list
 
 ## Prérequis
@@ -35,7 +38,6 @@ Variables principales:
 - TMDB_API_KEY: clé API TMDB (pour l'écran TMDB).
 - TMDB_LIST_ID: ID de liste TMDB.
 - SCREEN_SCHEDULE_FILE: fichier de planning (par défaut `schedule.json`).
-- SCREEN_SCHEDULE_WINDOW_MINUTES: conserve la compatibilité env mais n'est plus utilise avec les regles from/to.
 - SCREEN_SCHEDULE_STATE_FILE: état des règles déjà exécutées.
 
 ## Exécution locale (sans Docker)
@@ -56,7 +58,10 @@ Forcer un écran précis:
 
 ```bash
 python main.py --screen meteo_calendar --save-local
+python main.py --screen meteo_calendar_glance --save-local
 python main.py --screen meteo_calendar_bear --save-local
+python main.py --screen meteo_calendar_bear_today --save-local
+python main.py --screen meteo_calendar_bear_tomorrow --save-local
 python main.py --screen tmdb_random_list --save-local
 ```
 

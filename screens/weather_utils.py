@@ -2,6 +2,8 @@ import os
 from datetime import datetime, timedelta, timezone
 
 import requests
+from icalendar import Calendar
+import recurring_ical_events
 
 
 OPENMETEO_GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
@@ -221,3 +223,88 @@ def build_temp_trend(day_points, start_hour=7.5, end_hour=22.5, samples=33):
         if temp is not None:
             out.append({"hour": hour, "temp": temp})
     return out
+
+
+def fetch_calendar_events(calendar_urls, log_fn=None):
+    logger = log_fn or (lambda _message, always=False: None)
+
+    events = []
+    seen = set()
+    had_success = False
+    had_error = False
+    now = datetime.now()
+    today = now.date()
+    tomorrow = today + timedelta(days=1)
+    range_start = datetime.combine(today, datetime.min.time())
+    range_end = datetime.combine(tomorrow + timedelta(days=1), datetime.min.time())
+
+    for calendar_index, calendar_url in enumerate(calendar_urls):
+        added_for_calendar = 0
+        try:
+            response = requests.get(calendar_url, timeout=10)
+            response.raise_for_status()
+            cal = Calendar.from_ical(response.text)
+            had_success = True
+
+            # Expand recurring events inside [today, tomorrow + 1 day).
+            expanded = recurring_ical_events.of(cal).between(range_start, range_end)
+
+            for component in expanded:
+                if component.name != "VEVENT":
+                    continue
+
+                # A malformed event should not invalidate the whole calendar.
+                try:
+                    dtstart = component.get("dtstart")
+                    if dtstart is None:
+                        continue
+                    start_raw = dtstart.dt
+
+                    if isinstance(start_raw, datetime):
+                        start = start_raw
+                        if start.tzinfo is not None:
+                            start = start.astimezone().replace(tzinfo=None)
+                    else:
+                        start = datetime.combine(start_raw, datetime.min.time())
+
+                    summary_value = component.get("summary")
+                    summary = str(summary_value) if summary_value else "(Sans titre)"
+
+                    if start.date() in (today, tomorrow):
+                        event_key = (start.isoformat(), summary)
+                        if event_key not in seen:
+                            seen.add(event_key)
+                            events.append(
+                                {
+                                    "start": start,
+                                    "summary": summary,
+                                    "source_index": calendar_index,
+                                }
+                            )
+                            added_for_calendar += 1
+                except Exception as exc:
+                    had_error = True
+                    logger(f"Evenement ignore ({exc}) : {calendar_url}", always=True)
+
+            logger(f"Calendrier charge ({added_for_calendar} evenement(s)) : {calendar_url}")
+        except Exception as exc:
+            had_error = True
+            logger(f"Calendrier indisponible ({exc}) : {calendar_url}", always=True)
+
+    if not had_success:
+        logger("Aucun calendrier accessible, aucun evenement affiche.", always=True)
+        return [], [], had_success, had_error
+
+    if events and all(event["summary"].strip().lower() == "busy" for event in events):
+        logger(
+            "Les flux ICS retournent uniquement 'Busy'. Utilise les liens ICS prives (adresse secrete) "
+            "ou rends les details des evenements publics dans Google Agenda.",
+            always=True,
+        )
+    elif had_error:
+        logger("Certains calendriers n'ont pas pu etre recuperes.", always=True)
+
+    events = sorted(events, key=lambda x: x["start"])
+    today_events = [event for event in events if event["start"].date() == today]
+    tomorrow_events = [event for event in events if event["start"].date() == tomorrow]
+    return today_events, tomorrow_events, had_success, had_error
