@@ -19,6 +19,7 @@ keep_prefixes = (
     "WEATHER_DEBUG_LOGS",
     "BEAR_DEBUG_LOGS",
     "SIMULATE_LONG_EVENTS",
+    "ADMIN_",
 )
 
 with open(output_path, "w", encoding="utf-8") as handle:

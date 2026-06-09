@@ -3,3 +3,4 @@ Pillow
 cairosvg
 icalendar
 recurring-ical-events
+flask

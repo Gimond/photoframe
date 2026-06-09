@@ -85,7 +85,7 @@ Run:
 
 ```bash
 docker rm -f condescending_rubin 2>/dev/null || true
-docker run -d --name condescending_rubin frame
+docker run -d --name condescending_rubin -p 8080:8080 frame
 ```
 
 Logs:
@@ -100,6 +100,17 @@ Le conteneur:
 - démarre cron en foreground,
 - exécute `main.py` chaque minute,
 - envoie les logs Python sur stdout/stderr du conteneur.
+
+Interface d'administration:
+
+- accessible sur `http://localhost:8080/` en local si le port est publié,
+- accessible via l'URL publique Coolify configurée sur le service,
+- ne pas utiliser l'IP interne du conteneur (`172.17.x.x`) depuis le navigateur de l'hôte.
+
+Variables optionnelles:
+
+- ADMIN_PORT: port HTTP de l'interface d'administration (par défaut `8080`).
+- ADMIN_SECRET: cle de protection optionnelle pour l'interface.
 
 ## Planning automatique
 

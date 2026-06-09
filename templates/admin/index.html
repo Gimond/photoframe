@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Frame – Administration</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f4f4f5; color: #18181b; }
+    header { background: #18181b; color: #fafafa; padding: 1rem 1.5rem; display: flex; align-items: center; gap: .75rem; }
+    header h1 { font-size: 1.1rem; font-weight: 600; }
+    main { max-width: 900px; margin: 2rem auto; padding: 0 1rem; display: flex; flex-direction: column; gap: 2rem; }
+    section { background: #fff; border: 1px solid #e4e4e7; border-radius: .75rem; padding: 1.5rem; }
+    section h2 { font-size: 1rem; font-weight: 600; margin-bottom: 1.25rem; border-bottom: 1px solid #f4f4f5; padding-bottom: .75rem; }
+    label { display: block; font-size: .85rem; font-weight: 500; margin-bottom: .25rem; color: #52525b; }
+    select, input[type="time"], input[type="number"], input[type="text"] {
+      width: 100%; padding: .4rem .6rem; border: 1px solid #d4d4d8; border-radius: .375rem;
+      font-size: .9rem; background: #fafafa;
+    }
+    .field { margin-bottom: .75rem; }
+    .row { display: grid; gap: .75rem; }
+    .row-3 { grid-template-columns: 1fr 1fr 1fr; }
+    .row-2 { grid-template-columns: 1fr 1fr; }
+    .row-auto { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+    button { padding: .45rem .9rem; border: none; border-radius: .375rem; font-size: .875rem; font-weight: 500; cursor: pointer; }
+    .btn-primary { background: #18181b; color: #fafafa; }
+    .btn-primary:hover { background: #3f3f46; }
+    .btn-danger { background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; }
+    .btn-danger:hover { background: #fee2e2; }
+    .btn-add { background: #f4f4f5; border: 1px dashed #a1a1aa; color: #52525b; width: 100%; margin-top: .5rem; }
+    .btn-add:hover { background: #e4e4e7; }
+    .rule-card { border: 1px solid #e4e4e7; border-radius: .5rem; padding: 1rem; margin-bottom: .75rem; position: relative; }
+    .rule-card .remove-rule { position: absolute; top: .6rem; right: .6rem; }
+    .days-grid { display: flex; gap: .4rem; flex-wrap: wrap; }
+    .days-grid label { display: flex; align-items: center; gap: .3rem; font-weight: 400; color: #18181b; cursor: pointer; }
+    .days-grid input[type="checkbox"] { width: auto; cursor: pointer; }
+    .temp-rule { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: .5rem; align-items: end; margin-bottom: .5rem; }
+    #toast { position: fixed; bottom: 1.5rem; right: 1.5rem; padding: .7rem 1.1rem; border-radius: .5rem; font-size: .875rem;
+              font-weight: 500; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 100; }
+    #toast.show { opacity: 1; }
+    #toast.ok  { background: #f0fdf4; color: #15803d; border: 1px solid #86efac; }
+    #toast.err { background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5; }
+    .section-actions { display: flex; justify-content: flex-end; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+
+<header>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+  <h1>Frame – Administration</h1>
+</header>
+
+<main>
+
+  <!-- ===== SCHEDULE ===== -->
+  <section>
+    <h2>Planning des écrans</h2>
+
+    <div class="field">
+      <label>Écran par défaut</label>
+      <select id="sched-default">
+        {% for s in screen_choices %}
+        <option value="{{ s }}" {% if s == schedule.get('default') %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div id="rules-container">
+      {% for rule in schedule.get('rules', []) %}
+      <div class="rule-card" data-idx="{{ loop.index0 }}">
+        <button class="btn-danger remove-rule" onclick="removeRule(this)">✕</button>
+        <div class="row row-2" style="margin-bottom:.75rem">
+          <div class="field">
+            <label>De</label>
+            <input type="time" class="rule-from" value="{{ rule.from }}">
+          </div>
+          <div class="field">
+            <label>À</label>
+            <input type="time" class="rule-to" value="{{ rule.to }}">
+          </div>
+        </div>
+        <div class="field" style="margin-bottom:.75rem">
+          <label>Écran</label>
+          <select class="rule-screen">
+            {% for s in screen_choices %}
+            <option value="{{ s }}" {% if s == rule.screen %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label>Jours</label>
+          <div class="days-grid">
+            {% for d in day_choices %}
+            <label>
+              <input type="checkbox" class="rule-day" value="{{ d }}" {% if d in rule.days %}checked{% endif %}>
+              {{ d }}
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <button class="btn-add" onclick="addRule()">+ Ajouter une règle</button>
+
+    <div class="section-actions">
+      <button class="btn-primary" onclick="saveSchedule()">Enregistrer le planning</button>
+    </div>
+  </section>
+
+  <!-- ===== BEAR CONFIG ===== -->
+  <section>
+    <h2>Configuration de l'ours</h2>
+
+    <div class="row row-2" style="margin-bottom:1rem">
+      <div class="field">
+        <label>Image par défaut</label>
+        <select id="bear-default">
+          {% for img in available_images %}
+          <option value="{{ img }}" {% if img == bear_config.get('default_image') %}selected{% endif %}>{{ img }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label>Image neige</label>
+        <select id="bear-snow-image">
+          {% for img in available_images %}
+          <option value="{{ img }}" {% if img == bear_config.get('snow_image') %}selected{% endif %}>{{ img }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <!-- Temperature rules -->
+    <h3 style="font-size:.9rem; font-weight:600; margin-bottom:.5rem; color:#52525b">Règles de température (ciel clair)</h3>
+    <div id="temp-rules">
+      {% for rule in bear_config.get('temperature_rules', []) %}
+      <div class="temp-rule">
+        <div class="field">
+          <label>Temp min (°C)</label>
+          <input type="number" class="tr-min" value="{{ rule.avg_temp_min if rule.avg_temp_min is not none else '' }}" placeholder="—">
+        </div>
+        <div class="field">
+          <label>Temp max (°C)</label>
+          <input type="number" class="tr-max" value="{{ rule.avg_temp_max if rule.avg_temp_max is not none else '' }}" placeholder="—">
+        </div>
+        <div class="field">
+          <label>Image</label>
+          <select class="tr-image">
+            {% for img in available_images %}
+            <option value="{{ img }}" {% if img == rule.image %}selected{% endif %}>{{ img }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field"><label>&nbsp;</label><button class="btn-danger" onclick="this.closest('.temp-rule').remove()">✕</button></div>
+      </div>
+      {% endfor %}
+    </div>
+    <button class="btn-add" onclick="addTempRule('temp-rules')">+ Règle température</button>
+
+    <!-- Rainy temperature rules -->
+    <h3 style="font-size:.9rem; font-weight:600; margin:.75rem 0 .5rem; color:#52525b">Règles de température (pluie)</h3>
+    <div id="rainy-rules">
+      {% for rule in bear_config.get('rainy_temperature_rules', []) %}
+      <div class="temp-rule">
+        <div class="field">
+          <label>Temp min (°C)</label>
+          <input type="number" class="tr-min" value="{{ rule.avg_temp_min if rule.avg_temp_min is not none else '' }}" placeholder="—">
+        </div>
+        <div class="field">
+          <label>Temp max (°C)</label>
+          <input type="number" class="tr-max" value="{{ rule.avg_temp_max if rule.avg_temp_max is not none else '' }}" placeholder="—">
+        </div>
+        <div class="field">
+          <label>Image</label>
+          <select class="tr-image">
+            {% for img in available_images %}
+            <option value="{{ img }}" {% if img == rule.image %}selected{% endif %}>{{ img }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field"><label>&nbsp;</label><button class="btn-danger" onclick="this.closest('.temp-rule').remove()">✕</button></div>
+      </div>
+      {% endfor %}
+    </div>
+    <button class="btn-add" onclick="addTempRule('rainy-rules')">+ Règle température pluie</button>
+
+    <div class="section-actions">
+      <button class="btn-primary" onclick="saveBearConfig()">Enregistrer la config ours</button>
+    </div>
+  </section>
+
+</main>
+
+<div id="toast"></div>
+
+<script>
+const SCREEN_CHOICES = {{ screen_choices | tojson }};
+const DAY_CHOICES    = {{ day_choices    | tojson }};
+const AVAIL_IMAGES   = {{ available_images | tojson }};
+
+function toast(msg, ok = true) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show ' + (ok ? 'ok' : 'err');
+  clearTimeout(t._t);
+  t._t = setTimeout(() => t.className = '', 3000);
+}
+
+// ---- Schedule ----
+
+function addRule() {
+  const tmpl = `<div class="rule-card">
+    <button class="btn-danger remove-rule" onclick="removeRule(this)">✕</button>
+    <div class="row row-2" style="margin-bottom:.75rem">
+      <div class="field"><label>De</label><input type="time" class="rule-from" value="07:00"></div>
+      <div class="field"><label>À</label><input type="time" class="rule-to" value="09:00"></div>
+    </div>
+    <div class="field" style="margin-bottom:.75rem">
+      <label>Écran</label>
+      <select class="rule-screen">${SCREEN_CHOICES.map(s => `<option value="${s}">${s}</option>`).join('')}</select>
+    </div>
+    <div class="field">
+      <label>Jours</label>
+      <div class="days-grid">${DAY_CHOICES.map(d => `<label><input type="checkbox" class="rule-day" value="${d}" checked>${d}</label>`).join('')}</div>
+    </div>
+  </div>`;
+  document.getElementById('rules-container').insertAdjacentHTML('beforeend', tmpl);
+}
+
+function removeRule(btn) { btn.closest('.rule-card').remove(); }
+
+function readRules() {
+  return [...document.querySelectorAll('.rule-card')].map(card => ({
+    from:   card.querySelector('.rule-from').value,
+    to:     card.querySelector('.rule-to').value,
+    screen: card.querySelector('.rule-screen').value,
+    days:   [...card.querySelectorAll('.rule-day:checked')].map(c => c.value),
+  }));
+}
+
+async function saveSchedule() {
+  const payload = {
+    default: document.getElementById('sched-default').value,
+    rules: readRules(),
+  };
+  const r = await fetch('/api/schedule', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+  const j = await r.json();
+  r.ok ? toast('Planning enregistré ✓') : toast('Erreur: ' + (j.error || r.status), false);
+}
+
+// ---- Bear config ----
+
+function addTempRule(containerId) {
+  const tmpl = `<div class="temp-rule">
+    <div class="field"><label>Temp min (°C)</label><input type="number" class="tr-min" placeholder="—"></div>
+    <div class="field"><label>Temp max (°C)</label><input type="number" class="tr-max" placeholder="—"></div>
+    <div class="field"><label>Image</label>
+      <select class="tr-image">${AVAIL_IMAGES.map(i => `<option value="${i}">${i}</option>`).join('')}</select>
+    </div>
+    <div class="field"><label>&nbsp;</label><button class="btn-danger" onclick="this.closest('.temp-rule').remove()">✕</button></div>
+  </div>`;
+  document.getElementById(containerId).insertAdjacentHTML('beforeend', tmpl);
+}
+
+function readTempRules(containerId) {
+  return [...document.getElementById(containerId).querySelectorAll('.temp-rule')].map(row => {
+    const minVal = row.querySelector('.tr-min').value.trim();
+    const maxVal = row.querySelector('.tr-max').value.trim();
+    const rule = { image: row.querySelector('.tr-image').value };
+    if (minVal !== '') rule.avg_temp_min = parseFloat(minVal);
+    if (maxVal !== '') rule.avg_temp_max = parseFloat(maxVal);
+    return rule;
+  });
+}
+
+async function saveBearConfig() {
+  const payload = {
+    available_images: AVAIL_IMAGES,
+    default_image:    document.getElementById('bear-default').value,
+    snow_image:       document.getElementById('bear-snow-image').value,
+    temperature_rules:       readTempRules('temp-rules'),
+    rainy_temperature_rules: readTempRules('rainy-rules'),
+  };
+  const r = await fetch('/api/bear-config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+  const j = await r.json();
+  r.ok ? toast('Config ours enregistrée ✓') : toast('Erreur: ' + (j.error || r.status), false);
+}
+</script>
+</body>
+</html>

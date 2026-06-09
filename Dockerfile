@@ -36,3 +36,5 @@ RUN echo "*/1 * * * * root /usr/local/bin/run_frame_job.sh >> /proc/1/fd/1 2>> /
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 CMD ["/usr/local/bin/docker-entrypoint.sh"]
+
+EXPOSE 8080
