@@ -10,6 +10,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         cron \
         supervisor \
+        tzdata \
         libcairo2 \
         libpango-1.0-0 \
         libgdk-pixbuf-2.0-0 \
@@ -23,12 +24,15 @@ COPY . .
 
 RUN useradd -m appuser && chown -R appuser:appuser /app
 
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod 0755 /usr/local/bin/docker-entrypoint.sh
+
 # Configure cron
 # Run as root for stdout/stderr redirection, then drop to appuser for Python execution.
-RUN echo "*/1 * * * * root su -s /bin/sh appuser -c '/usr/local/bin/python3 /app/main.py' >> /proc/1/fd/1 2>> /proc/1/fd/2" > /etc/crontab \
+RUN echo "*/1 * * * * root /usr/local/bin/run_frame_job.sh >> /proc/1/fd/1 2>> /proc/1/fd/2" > /etc/crontab \
     && chmod 0644 /etc/crontab
 
 # Configure supervisord
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+CMD ["/usr/local/bin/docker-entrypoint.sh"]
